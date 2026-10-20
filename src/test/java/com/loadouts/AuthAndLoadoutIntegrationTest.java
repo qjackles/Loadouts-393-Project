@@ -10,6 +10,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 @SpringBootTest @AutoConfigureMockMvc
+
 class AuthAndLoadoutIntegrationTest {
   @Autowired MockMvc mvc; @Autowired ObjectMapper mapper;
   @Test void canRegisterThenCreateAndViewLoadout() throws Exception {
@@ -25,4 +26,5 @@ class AuthAndLoadoutIntegrationTest {
     mvc.perform(post("/api/loadouts").contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"No Login\"}"))
       .andExpect(status().isUnauthorized());
   }
+
 }
