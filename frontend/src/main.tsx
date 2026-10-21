@@ -10,7 +10,7 @@ function route():Route { const hash=location.hash.slice(1); if(hash==='create')r
 async function api<T>(path:string,method='GET',body?:unknown):Promise<T>{
  let response:Response;
  try {response=await fetch('/api'+path,{method,credentials:'include',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});} catch {throw new Error('Cannot reach the backend. Start Spring Boot on port 8080, then try again.');}
- if(!response.ok){let data;try{data=await response.json();}catch{} if(response.status===401)throw new Error('Your session has expired. Please sign in again.');throw new Error(typeof data?.error==='string'?data.error:'The request could not be completed. Please try again.');}
+ if(!response.ok){let data;try{data=await response.json();}catch{} if(response.status>=500&&!data)throw new Error('The backend is not available. In a second terminal at the project root run: powershell -ExecutionPolicy Bypass -File .\\mvnw-demo.ps1'); if(response.status===401)throw new Error('Your session has expired. Please sign in again.');throw new Error(typeof data?.error==='string'?data.error:'The request could not be completed. Please try again.');}
  return response.status===204?undefined as T:response.json();
 }
 const categories=['All collections','Cooking','Outdoors','Technology','Photography','Fitness','Other'];
