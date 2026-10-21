@@ -8,6 +8,7 @@ Implemented:
 - create loadout (login required)
 - view all loadouts
 - view one loadout
+- manually add, view, and remove product links after creating a loadout
 - PostgreSQL locally/production
 - H2 for JUnit tests
 
@@ -27,6 +28,9 @@ Endpoints:
 - POST /api/loadouts
 - GET /api/loadouts
 - GET /api/loadouts/{id}
+- GET /api/loadouts/{id}/products
+- POST /api/loadouts/{id}/products (creator only; name, url, optional note)
+- DELETE /api/loadouts/{id}/products/{productId} (creator only)
 
 For Vercel, Dockerfile.vercel is included. Set DATABASE_URL, DATABASE_USERNAME, DATABASE_PASSWORD, and COOKIE_SECURE=true.
 
