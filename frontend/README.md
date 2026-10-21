@@ -20,10 +20,10 @@ Vite proxies `/api` to `http://localhost:8080`, forwarding session cookies throu
 - Registration signs in immediately, matching the backend.
 - Login state is held in memory: after refresh, sign in again to create. The backend has no endpoint to check the current session.
 - Every new collection is public immediately; no draft/publish endpoints exist.
-- Products, prices, images, profiles, editing, deletion, and social interactions are not implemented in the current API and have no simulated actions in the UI.
+- Creators can manually add product names, links, and notes after creating a loadout, and remove those entries later. Visitors can open product links. Prices, images, profiles, loadout editing/deletion, and social interactions are not implemented.
 - Collection illustrations are decorative CSS; they are not product images.
 - Google Fonts are optional; local sans-serif fallbacks work without them.
 
 ## Manual smoke check
 
-With the backend running: register an account, create a collection, open it, refresh its detail URL, return to browse, search/filter/sort, sign out, and verify creation prompts for login. Also stop the backend and retry browse to inspect the error state. Test a narrow mobile viewport and keyboard navigation through account forms.
+With the backend running: register an account, create a collection, add a product link, refresh its detail URL, open the product link, remove it, return to browse, search/filter/sort, sign out, and verify creation prompts for login. Also stop the backend and retry browse to inspect the error state. Test a narrow mobile viewport and keyboard navigation through account forms.
