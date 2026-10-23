@@ -107,7 +107,147 @@ class LoadoutValidationTest {
             .andExpect(status().isNotFound());
     }
 
-    // Test 5: Anyone can browse loadouts
+    // Test 5: Duplicate email should be rejected
+    @Test
+    void registrationRejectsDuplicateEmail() throws Exception {
+        MockHttpSession session = new MockHttpSession();
+        String unique = UUID.randomUUID().toString().replace("-", "");
+        String email = "duplicate" + unique + "@example.com";
+
+        mvc.perform(post("/api/auth/register")
+                .session(session)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "email": "%s",
+                      "username": "dupemailuser%s",
+                      "password": "password123"
+                    }
+                    """.formatted(email, unique)))
+            .andExpect(status().isCreated());
+
+        mvc.perform(post("/api/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "email": "%s",
+                      "username": "differentuser%s",
+                      "password": "password123"
+                    }
+                    """.formatted(email, unique)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error")
+                .value("Email is already registered."));
+    }
+
+    // Test 6: Duplicate username should be rejected
+    @Test
+    void registrationRejectsDuplicateUsername() throws Exception {
+        MockHttpSession session = new MockHttpSession();
+        String unique = UUID.randomUUID().toString().replace("-", "");
+        String username = "dupuser" + unique;
+
+        mvc.perform(post("/api/auth/register")
+                .session(session)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "email": "user%s@example.com",
+                      "username": "%s",
+                      "password": "password123"
+                    }
+                    """.formatted(unique, username)))
+            .andExpect(status().isCreated());
+
+        mvc.perform(post("/api/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "email": "new%s@example.com",
+                      "username": "%s",
+                      "password": "password123"
+                    }
+                    """.formatted(unique, username)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error")
+                .value("Username is already taken."));
+    }
+
+    // Test 7: Blank username should be rejected
+    @Test
+    void registrationRejectsBlankUsername() throws Exception {
+        mvc.perform(post("/api/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "email": "blankuser@example.com",
+                      "username": "   ",
+                      "password": "password123"
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error")
+                .value("username is required."));
+    }
+
+    // Test 8: Empty login email should be rejected
+    @Test
+    void loginRejectsBlankEmail() throws Exception {
+        mvc.perform(post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "email": "   ",
+                      "password": "password123"
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error")
+                .value("email is required."));
+    }
+
+    // Test 9: Whitespace-only title should be rejected
+    @Test
+    void createLoadoutRejectsWhitespaceTitle() throws Exception {
+        MockHttpSession session = new MockHttpSession();
+        registerUser(session);
+
+        mvc.perform(post("/api/loadouts")
+                .session(session)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "title": "   ",
+                      "description": "Test description",
+                      "category": "Gaming"
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error")
+                .value("title is required."));
+    }
+
+    // Test 10: Loadout title should be trimmed before saving
+    @Test
+    void createLoadoutTrimsTitleWhitespace() throws Exception {
+        MockHttpSession session = new MockHttpSession();
+        registerUser(session);
+
+        mvc.perform(post("/api/loadouts")
+                .session(session)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "title": "  Pro Gaming Setup  ",
+                      "description": "A trimmed title should persist",
+                      "category": "Gaming"
+                    }
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.title").value("Pro Gaming Setup"));
+    }
+
+    // Test 11: Anyone can browse loadouts
     @Test
     void getAllLoadoutsWithoutLogin() throws Exception {
         mvc.perform(get("/api/loadouts"))
