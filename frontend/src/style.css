@@ -17,3 +17,36 @@
 .product-form>p{font-size:12px;color:var(--muted);margin:0 0 22px}
 .product-form label{margin-bottom:17px}
 @media(max-width:640px){.products-heading{align-items:start;flex-direction:column}.product-card{padding:15px;gap:11px}.product-form{padding:20px}}
+
+/* Demo 2 controls */
+.auth-dialog { border: 1px solid var(--line); color: var(--ink); margin: auto; max-height: 90dvh; max-width: calc(100% - 32px); }
+.auth-dialog::backdrop { background: #202b226e; backdrop-filter: blur(5px); }
+.action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.field-pair, .discover-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.discover-row .action-row { grid-column: 1 / -1; }
+.discover-form { margin-top: 24px; }
+.discover-form label { margin-bottom: 0; }
+.discover-form label span { display: inline-flex; align-items: center; gap: 8px; }
+.discover-row + .discover-row { margin-top: 14px; }
+.product-fields { min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 15px; margin: 18px 0; }
+.product-fields legend { padding-inline: 8px; font-weight: 600; }
+.product-card { min-width: 0; align-items: flex-start; }
+.product-copy { overflow-wrap: anywhere; min-width: 0; }
+.product-card .action-row { flex-shrink: 0; }
+.feedback { padding: 12px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.feedback p { white-space: pre-wrap; }
+.price { display: inline-block; font-weight: 650; color: #445537; }
+.price small { display: block; margin-top: 3px; font-weight: 400; color: var(--muted); }
+.check-label { display: flex; flex-direction: row; align-items: center; }
+.check-label input { width: auto; }
+.detail-author a { text-decoration: underline; }
+.detail > .action-row { margin-top: 1rem; }
+@media (max-width: 780px) {
+  .header { height: auto; min-height: 75px; padding-block: 12px; flex-wrap: wrap; gap: 12px; }
+  .header nav { flex-wrap: wrap; gap: 14px; }
+  .header nav a { display: inline; }
+}
+@media (max-width: 600px) {
+  .field-pair, .discover-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .product-card { flex-wrap: wrap; }
+}

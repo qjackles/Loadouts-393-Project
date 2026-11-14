@@ -1,45 +1,246 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ArrowUpRight, ArrowLeft, ArrowRight, Layers, Plus, Search, X, LogOut, LoaderCircle, Compass, AlertCircle, ExternalLink, Trash2 } from 'lucide-react';
+import { ArrowLeft, Layers, LogOut, Plus, Search, X } from 'lucide-react';
+import { api, ApiError, byId, categories, message, type Loadout, type ProductFields, type Profile, type User } from './api';
+import { Cards, CommunityPanel, emptyProduct, ErrorText, Price, ProductFieldsEditor, Products, useData } from './parts';
 import './style.css';
 
-type User = {id:string;email:string;username:string};
-type Loadout = {id:string;title:string;description:string|null;category:string|null;ownerId:string;ownerUsername:string;createdAt:string};
-type Product = {id:string;name:string;url:string;note:string|null};
-type Route = {page:'browse'} | {page:'detail';id:string} | {page:'create'};
-function route():Route { const hash=location.hash.slice(1); if(hash==='create')return {page:'create'}; if(hash.startsWith('loadout/'))return {page:'detail',id:hash.slice(8)};return {page:'browse'}; }
-async function api<T>(path:string,method='GET',body?:unknown):Promise<T>{
- let response:Response;
- try {response=await fetch('/api'+path,{method,credentials:'include',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});} catch {throw new Error('Cannot reach the backend. Start Spring Boot on port 8080, then try again.');}
- if(!response.ok){let data;try{data=await response.json();}catch{} if(response.status>=500&&!data)throw new Error('The backend is not available. In a second terminal at the project root run: powershell -ExecutionPolicy Bypass -File .\\mvnw-demo.ps1'); if(response.status===401)throw new Error('Your session has expired. Please sign in again.');throw new Error(typeof data?.error==='string'?data.error:'The request could not be completed. Please try again.');}
- return response.status===204?undefined as T:response.json();
+type View = {page:string; id:string};
+const currentView = ():View => {
+  const [page='',id='']=location.hash.slice(1).split('/');
+  return {page,id};
+};
+const profilePath = (id:string) => '/profiles/'+encodeURIComponent(id);
+const optionCategories = categories.map(c=><option key={c}>{c}</option>);
+
+function AuthDialog({ initial, close, done }: {
+  initial:'login'|'register'; close:()=>void; done:(user:User)=>void;
+}) {
+  const [mode,setMode]=useState(initial);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const [dialog,setDialog]=useState<HTMLDialogElement|null>(null);
+  useEffect(()=>{ if(dialog && !dialog.open) dialog.showModal(); },[dialog]);
+  async function submit(e:FormEvent<HTMLFormElement>){
+    e.preventDefault(); const f=new FormData(e.currentTarget);setError('');setBusy(true);
+    try {done(await api<User>('/auth/'+mode,'POST',Object.fromEntries(f)));}
+    catch(e){setError(message(e));}finally{setBusy(false);}
+  }
+  return <dialog ref={setDialog} className="modal auth-dialog" onCancel={e=>{e.preventDefault();if(!busy)close();}}>
+    <button type="button" aria-label="Close" className="modal-close icon-button" onClick={close} disabled={busy}><X size={20}/></button>
+    <h2>{mode==='login'?'Sign in':'Create an account'}</h2>
+    <form key={mode} onSubmit={submit}>
+      {mode==='register'&&<label>Username<input name="username" autoComplete="username" required maxLength={255}/></label>}
+      <label>Email<input name="email" type="email" autoComplete="email" required maxLength={255}/></label>
+      <label>Password<input name="password" type="password" autoComplete={mode==='register'?'new-password':'current-password'} required minLength={mode==='register'?8:undefined} maxLength={72}/></label>
+      <ErrorText text={error}/><button className="button dark full" disabled={busy}>{busy?'Working…':mode==='login'?'Sign in':'Create account'}</button>
+    </form>
+    <p><button type="button" className="text-button" disabled={busy} onClick={()=>{setError('');setMode(mode==='login'?'register':'login');}}>{mode==='login'?'Create an account':'Back to sign in'}</button></p>
+  </dialog>;
 }
-const categories=['All collections','Cooking','Outdoors','Technology','Photography','Fitness','Other'];
-function Products({loadoutId,canEdit}:{loadoutId:string;canEdit:boolean}){
- const [products,setProducts]=useState<Product[]>([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [busy,setBusy]=useState(false);const [deleting,setDeleting]=useState<string|null>(null);
- useEffect(()=>{let active=true;setLoading(true);api<Product[]>('/loadouts/'+encodeURIComponent(loadoutId)+'/products').then(items=>{if(active)setProducts(items);}).catch(e=>{if(active)setError((e as Error).message);}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[loadoutId]);
- async function add(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const form=e.currentTarget;const data=new FormData(form);setBusy(true);setError('');try{const product=await api<Product>('/loadouts/'+encodeURIComponent(loadoutId)+'/products','POST',{name:String(data.get('name')).trim(),url:String(data.get('url')).trim(),note:String(data.get('note')).trim()});setProducts(old=>[...old,product]);form.reset();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- async function remove(id:string){if(!window.confirm('Remove this product from the loadout?'))return;setDeleting(id);setError('');try{await api('/loadouts/'+encodeURIComponent(loadoutId)+'/products/'+encodeURIComponent(id),'DELETE');setProducts(old=>old.filter(p=>p.id!==id));}catch(e){setError((e as Error).message);}finally{setDeleting(null);}}
- return <section className="products"><div className="products-heading"><div><span className="eyebrow muted">MANUALLY ADDED LINKS</span><h2>Products in this loadout</h2></div><span className="collection-count">{products.length} product{products.length===1?'':'s'}</span></div>{loading?<p className="fine">Loading products…</p>:<>{products.length?<div className="product-list">{products.map(product=><article className="product-card" key={product.id}><div className="product-icon"><Layers size={20}/></div><div className="product-copy"><h3>{product.name}</h3>{product.note&&<p>{product.note}</p>}<a href={product.url} target="_blank" rel="noopener noreferrer">Visit product link <ExternalLink size={14}/></a></div>{canEdit&&<button className="icon-button" type="button" aria-label={'Remove '+product.name} title="Remove product" disabled={deleting===product.id} onClick={()=>void remove(product.id)}><Trash2 size={17}/></button>}</article>)}</div>:<p className="product-empty">No products added yet. {canEdit?'Add the first link below.':'Check back soon.'}</p>}{canEdit&&<form className="product-form" onSubmit={add}><h3>Add a product</h3><p>Enter the details yourself. Links are saved as provided.</p><label>Product name <span className="required">*</span><input name="name" required maxLength={120} placeholder="e.g. Cast iron skillet"/></label><label>Product link <span className="required">*</span><input name="url" type="url" required maxLength={2048} placeholder="https://example.com/product"/></label><label>Note (optional)<textarea name="note" maxLength={1000} rows={3} placeholder="Why is it in this loadout?"/></label><button className="button dark" disabled={busy}>{busy?<LoaderCircle className="spin" size={17}/>:<Plus size={17}/>} {busy?'Adding…':'Add product'}</button></form>}</>}{error&&<p className="error" role="alert">{error}</p>}</section>;
+function Discover({ revision, create }: { revision:number; create:()=>void }) {
+  const [query,setQuery]=useState('');
+  const [search,setSearch]=useState('');
+  const [category,setCategory]=useState('');
+  const [sort,setSort]=useState('newest');
+  const [range,setRange]=useState({min:'',max:''});
+  const [min,setMin]=useState('');
+  const [max,setMax]=useState('');
+  const [retry,setRetry]=useState(0);
+  const [filterError,setFilterError]=useState('');
+  const params=new URLSearchParams({q:search,category,sort});
+  if(range.min) params.set('minPrice',range.min);
+  if(range.max) params.set('maxPrice',range.max);
+  const results=useData<Loadout[]>('/loadouts?'+params,revision+retry);
+  function apply(e:FormEvent<HTMLFormElement>){
+    e.preventDefault();
+    if(min&&max&&Number(min)>Number(max)){setFilterError('Minimum price must be less than or equal to maximum price.');return;}
+    setFilterError('');setSearch(query);setRange({min,max});
+  }
+  function reset(){setQuery('');setSearch('');setCategory('');setSort('newest');setMin('');setMax('');setRange({min:'',max:''});setFilterError('');}
+  return <>
+    <section className="hero"><div className="hero-copy"><div className="eyebrow"><span/> BUILT AROUND WHAT YOU LOVE</div>
+      <h1>Discover your next thing<span>.</span></h1><p>Find ideas for your next hobby and share the gear you use.</p>
+      <button className="button dark" onClick={create}><Plus size={18}/> Create a loadout</button>
+    </div><div className="hero-art" aria-hidden="true"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><Layers size={112} strokeWidth={.75}/></div></section>
+    <section className="collections"><h2>Discover loadouts</h2>
+      <form className="discover-form" role="search" onSubmit={apply}>
+        <div className="discover-row"><label><span><Search size={14}/> Search</span><input value={query} maxLength={200} onChange={e=>setQuery(e.target.value)} placeholder="Try baking or camping"/></label>
+        <label>Sort by<select value={sort} onChange={e=>setSort(e.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option><option value="price-low">Price low to high</option><option value="price-high">Price high to low</option></select></label></div>
+        <div className="discover-row"><label>Minimum known price<input type="number" min="0" step=".01" value={min} onChange={e=>setMin(e.target.value)}/></label>
+        <label>Maximum known price<input type="number" min="0" step=".01" value={max} onChange={e=>setMax(e.target.value)}/></label>
+        <div className="action-row"><button className="button dark small">Search and apply</button><button type="button" className="button outline small" onClick={reset}>Clear filters</button></div></div>
+      </form>
+      <div className="categories">{['',...categories].map(c=><button key={c} type="button" aria-pressed={c===category} className={c===category?'selected':''} onClick={()=>setCategory(c)}>{c||'All collections'}</button>)}</div>
+      <ErrorText text={filterError}/><ErrorText text={results.error}/>
+      {results.loading?<p role="status">Loading collections…</p>:results.error?<button className="button outline" onClick={()=>setRetry(x=>x+1)}>Try again</button>
+        :results.data&&<Cards items={results.data} empty="No collections match your search."/>}
+    </section>
+  </>;
+}
+function Listing({ page, revision }: {page:'mine'|'bookmarks'; revision:number}) {
+  const {data,error,loading}=useData<Loadout[]>('/loadouts/'+page,revision);
+  return <section className="page"><h1>{page==='mine'?'My loadouts':'Bookmarks'}</h1><ErrorText text={error}/>
+    {loading?<p role="status">Loading…</p>:data&&<Cards items={data} empty={page==='mine'?'You have no saved loadouts.':'You have no bookmarks yet.'}/>}</section>;
+}
+function Editor({ existing, changed }: { existing?:Loadout; changed:()=>void }) {
+  const [products,setProducts]=useState<{key:number; fields:ProductFields}[]>([]);
+  const counter=React.useRef(0);
+  const [error,setError]=useState('');
+  const [busy,setBusy]=useState(false);
+  async function submit(e:FormEvent<HTMLFormElement>){
+    e.preventDefault(); const fields = new FormData(e.currentTarget);
+    const submitter=(e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement|null;
+    const draft=submitter?.value === 'draft';
+    const input={...Object.fromEntries(fields),draft,...(!existing?{products:products.map(p=>p.fields)}:{})};
+    setError('');setBusy(true);
+    try{
+      const result=await api<Loadout>(existing?byId(existing.id):'/loadouts',existing?'PUT':'POST',input);
+      changed();location.hash='loadout/'+result.id;
+    }catch(e){setError(message(e));}finally{setBusy(false);}
+  }
+  return <section className="page editor"><a href={existing?'#loadout/'+existing.id:'#mine'} className="back"><ArrowLeft size={16}/> Back</a>
+    <h1>{existing?'Edit loadout':'Create a loadout'}</h1>
+    <form onSubmit={submit} className="editor-form">
+      <label>Collection title<input name="title" required maxLength={120} defaultValue={existing?.title}/></label>
+      <label>Category<select name="category" defaultValue={existing?.category||''}><option value="">Choose a category (optional)</option>
+        {existing?.category&&!categories.includes(existing.category)&&<option>{existing.category}</option>}{optionCategories}</select></label>
+      <label>Description<textarea name="description" maxLength={5000} rows={4} defaultValue={existing?.description||''}/></label>
+      {!existing&&<section><h2>Products</h2><p>Product links, prices, and availability can be left blank.</p>
+        {products.map((p,i)=><fieldset className="product-fields" key={p.key}><legend>Product {i+1}</legend>
+          <ProductFieldsEditor value={p.fields} change={fields=>setProducts(old=>old.map(x=>x.key===p.key?{...x,fields}:x))}/>
+          <button type="button" className="button outline small" onClick={()=>setProducts(old=>old.filter(x=>x.key!==p.key))}>Remove product {i+1}</button></fieldset>)}
+        <button type="button" disabled={products.length>=50||busy} className="button outline small" onClick={()=>setProducts(old=>[...old,{key:counter.current++,fields:emptyProduct}])}>Add a product</button>
+      </section>}
+      <p className="fine">Drafts are visible only to you. A private profile also hides your published loadouts from other users.</p>
+      <ErrorText text={error}/><div className="form-footer">
+        <button disabled={busy} className="button outline" type="submit" value="draft">Save draft</button>
+        <button disabled={busy} className="button dark" type="submit" value="publish">{existing&&!existing.draft?'Save and keep published':'Publish loadout'}</button>
+      </div>
+    </form>
+  </section>;
+}
+function EditPage({ id,user,changed }: {id:string;user:User;changed:()=>void}){
+  const {data,loading,error}=useData<Loadout>(byId(id));
+  if(loading)return <p className="page" role="status">Loading loadout…</p>;
+  if(!data||data.ownerId!==user.id)return <section className="page"><ErrorText text={error||'Only the creator can edit this loadout.'}/></section>;
+  return <Editor key={id} existing={data} changed={changed}/>;
+}
+function Details({ id,user,revision,changed,signIn }: {id:string;user:User|null;revision:number;changed:()=>void;signIn:()=>void}) {
+  const [detailRevision,refresh]=useState(0);
+  const {data,loading,error}=useData<Loadout>(byId(id),revision);
+  const [summary,setSummary]=useState<Loadout|null>(null);
+  const suggestions=useData<Loadout[]>(byId(id)+'/suggestions',revision+detailRevision);
+  const [removeError,setRemoveError]=useState('');
+  const [busy,setBusy]=useState(false);
+  useEffect(()=>{if(data)setSummary(data);},[data]);
+  async function productChanged(){
+    refresh(x=>x+1);
+    try{setSummary(await api<Loadout>(byId(id)));}catch(e){setRemoveError(message(e));}
+  }
+  async function remove(){
+    if(!confirm('Delete this loadout and its products?'))return;
+    setRemoveError('');setBusy(true);
+    try{await api(byId(id),'DELETE');changed();location.hash='mine';}
+    catch(e){setRemoveError(message(e));}finally{setBusy(false);}
+  }
+  const owner=!!user && data?.ownerId===user.id;
+  return <section className="page detail"><a className="back" href="#"><ArrowLeft size={16}/> Back to Discover</a>
+    {loading?<p role="status">Loading loadout…</p>:!data?<ErrorText text={error||'This loadout is unavailable.'}/>:<>
+      <div className="eyebrow">{data.draft?'PRIVATE DRAFT':data.category||'COLLECTION'}</div>
+      <h1>{data.title}</h1><div className="detail-author">Created by <a href={'#profile/'+data.ownerId}>@{data.ownerUsername}</a></div>
+      <p className="description">{data.description||'No description provided.'}</p>
+      <Price loadout={summary??data}/>
+      <p className="fine">Stored USD prices. Tax and shipping are excluded.</p>
+      {owner&&<div className="action-row"><a className="button outline small" href={'#edit/'+id}>Edit loadout</a>
+        <button type="button" className="button outline small" disabled={busy} onClick={()=>void remove()}>Delete loadout</button></div>}
+      <ErrorText text={removeError}/>
+      <Products id={id} owner={owner} revision={revision+detailRevision} changed={()=>void productChanged()}/>
+      {data.publiclyVisible&&<CommunityPanel id={id} signedIn={!!user} signIn={signIn} authRevision={user?.id||''}/>}
+      {!!suggestions.data?.length&&<section className="products"><h2>Related loadouts</h2><Cards items={suggestions.data} empty=""/></section>}
+    </>}
+  </section>;
+}
+function ProfilePage({id,user,revision,changed}:{id:string;user:User|null;revision:number;changed:()=>void}){
+  const {data,loading,error}=useData<Profile>(profilePath(id),revision);
+  return <section className="page"><a className="back" href="#"><ArrowLeft size={16}/> Back to Discover</a>
+    {loading?<p role="status">Loading profile…</p>:!data?<ErrorText text={error||'This profile is unavailable.'}/>:<>
+      <h1>{data.displayName||'@'+data.username}</h1>
+      {data.displayName&&<p>@{data.username}</p>}
+      <p className="description">{data.bio||'No bio yet.'}</p>
+      {data.privateProfile&&<p>This profile is private.</p>}
+      {user?.id===id&&<ProfileForm profile={data} changed={changed}/>}
+      <section className="products"><h2>Published loadouts</h2><Cards items={data.loadouts} empty="No published loadouts yet."/></section>
+    </>}
+  </section>;
+}
+function ProfileForm({profile,changed}:{profile:Profile;changed:()=>void}){
+  const [bio,setBio]=useState(profile.bio??'');
+  const [displayName,setDisplayName]=useState(profile.displayName??'');
+  const [privateProfile,setPrivate]=useState(profile.privateProfile);
+  const [error,setError]=useState('');
+  const [busy,setBusy]=useState(false);
+  async function save(e:FormEvent){
+    e.preventDefault();setError('');setBusy(true);
+    try{await api('/profiles/me','PUT',{displayName,bio,privateProfile});changed();}
+    catch(e){setError(message(e));}finally{setBusy(false);}
+  }
+  return <form className="product-form" onSubmit={save}><h2>Edit your profile</h2>
+    <label>Display name<input maxLength={80} value={displayName} onChange={e=>setDisplayName(e.target.value)}/></label>
+    <label>Bio<textarea rows={3} maxLength={1000} value={bio} onChange={e=>setBio(e.target.value)}/></label>
+    <label className="check-label"><input type="checkbox" checked={privateProfile} onChange={e=>setPrivate(e.target.checked)}/> Private profile</label>
+    <p>When private, only you can see your profile and loadouts.</p>
+    <button className="button dark" disabled={busy}>Save profile</button><ErrorText text={error}/>
+  </form>;
 }
 function App(){
- const [view,setView]=useState<Route>(route);const [items,setItems]=useState<Loadout[]>([]);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [query,setQuery]=useState('');const [category,setCategory]=useState('All collections');const [sort,setSort]=useState('newest');
- const [user,setUser]=useState<User|null>(null);const [auth,setAuth]=useState<'login'|'register'|null>(null);const [pendingCreate,setPendingCreate]=useState(false);const [busy,setBusy]=useState(false);const [authError,setAuthError]=useState('');const [notice,setNotice]=useState('');const [detail,setDetail]=useState<Loadout|null>(null);const [detailError,setDetailError]=useState('');const [detailLoading,setDetailLoading]=useState(false);const [saveError,setSaveError]=useState('');
- async function refresh(){setLoading(true);setError('');try{setItems(await api<Loadout[]>('/loadouts'));}catch(e){setError((e as Error).message);}finally{setLoading(false);}}
- useEffect(()=>{void refresh();const change=()=>setView(route());addEventListener('hashchange',change);return()=>removeEventListener('hashchange',change);},[]);
- useEffect(()=>{if(view.page!=='detail')return;let active=true;setDetail(null);setDetailError('');setDetailLoading(true);api<Loadout>('/loadouts/'+encodeURIComponent(view.id)).then(x=>{if(active)setDetail(x);}).catch(e=>{if(active)setDetailError(e.message);}).finally(()=>{if(active)setDetailLoading(false);});return()=>{active=false;};},[view]);
- useEffect(()=>{if(!auth)return;const previous=document.activeElement as HTMLElement;const key=(e:KeyboardEvent)=>{if(e.key==='Escape')setAuth(null);if(e.key==='Tab'){const controls=Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"] button,[role="dialog"] input'));const first=controls[0],last=controls[controls.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}};document.addEventListener('keydown',key);const old=document.body.style.overflow;document.body.style.overflow='hidden';return()=>{document.removeEventListener('keydown',key);document.body.style.overflow=old;previous?.focus();};},[auth]);
- function create(){if(user)location.hash='create';else{setPendingCreate(true);setAuthError('');setAuth('login');}}
- async function authenticate(e:React.FormEvent<HTMLFormElement>){e.preventDefault();const data=new FormData(e.currentTarget);setBusy(true);setAuthError('');try{const body={email:data.get('email'),password:data.get('password'),...(auth==='register'?{username:data.get('username')}:{})};const account=await api<User>('/auth/'+auth,'POST',body);setUser(account);setAuth(null);setNotice('You’re signed in as '+account.username+'.');if(pendingCreate){location.hash='create';setPendingCreate(false);}}catch(e){setAuthError((e as Error).message);}finally{setBusy(false);}}
- async function logout(){setBusy(true);try{await api('/auth/logout','POST');setUser(null);setNotice('You’re signed out.');location.hash='';}catch(e){setNotice((e as Error).message);}finally{setBusy(false);}}
- async function save(e:React.FormEvent<HTMLFormElement>){e.preventDefault();setSaveError('');if(!user){setPendingCreate(true);setAuth('login');return;}const data=new FormData(e.currentTarget);setBusy(true);try{const result=await api<Loadout>('/loadouts','POST',{title:String(data.get('title')).trim(),description:String(data.get('description')).trim(),category:data.get('category')||null});setItems(old=>[result,...old]);location.hash='loadout/'+result.id;setNotice('Your loadout is now live.');}catch(e){setSaveError((e as Error).message);}finally{setBusy(false);}}
- const filtered=items.filter(x=>(category==='All collections'||x.category===category)&&`${x.title} ${x.description??''} ${x.ownerUsername} ${x.category??''}`.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>sort==='title'?a.title.localeCompare(b.title):sort==='oldest'?Date.parse(a.createdAt)-Date.parse(b.createdAt):Date.parse(b.createdAt)-Date.parse(a.createdAt));
- return <><header className="header"><a className="brand" href="#" aria-label="Loadouts home"><span className="brand-icon"><Layers size={21}/></span>loadouts<span className="brand-dot">.</span></a><nav><a href="#" className={view.page==='browse'?'active':''}>Discover</a><span className="nav-divider"/>{user?<><span className="username">@{user.username}</span><button className="icon-button" aria-label="Sign out" onClick={logout} disabled={busy}><LogOut size={18}/></button></>:<button className="text-button" onClick={()=>{setAuthError('');setPendingCreate(false);setAuth('login');}}>Sign in</button>}<button className="button dark small" onClick={create}><Plus size={16}/> Create loadout</button></nav></header>
- {notice&&<div className="notice" role="status">{notice}<button className="icon-button" onClick={()=>setNotice('')} aria-label="Dismiss message"><X size={16}/></button></div>}
- <main>{view.page==='browse'?<><section className="hero"><div className="hero-copy"><div className="eyebrow"><span/> GOOD GEAR. GREAT IDEAS.</div><h1>Every passion.<br/>A better <span>starting point.</span></h1><p>Find inspiration in the things people put together.<br className="desktop"/> Discover collections made for doing what you love.</p><button className="button dark" onClick={create}>Build your first loadout <ArrowUpRight size={18}/></button><div className="hero-note"><span className="mini-icon"><Layers size={14}/></span> Your ideas, all in one place.</div></div><div className="hero-art" aria-hidden="true"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="art-label">A LITTLE OF WHAT YOU LOVE</div><div className="display-card back-card"><span className="tiny-tag">THE EVERYDAY EDIT</span><div className="objects"><div className="book"/><div className="headphones"/><div className="mug"/></div><div className="art-card-bottom"><span>Make it your own.</span><ArrowUpRight size={20}/></div></div><div className="floating-tag"><span className="orange-star">✳</span> Built around you</div><div className="art-index">001 / ENDLESS POSSIBILITIES</div></div></section>
- <section className="collections"><div className="section-top"><div><div className="eyebrow muted">CURATED BY THE COMMUNITY</div><h2>Discover your next thing<span>.</span></h2></div><span className="collection-count">{items.length} collection{items.length===1?'':'s'} to explore</span></div><div className="toolbar"><label className="search"><Search size={18}/><input aria-label="Search collections" placeholder="Search collections, interests, creators…" value={query} onChange={e=>setQuery(e.target.value)}/>{query&&<button className="icon-button" aria-label="Clear search" onClick={()=>setQuery('')}><X size={16}/></button>}</label><label className="sort">Sort by <select aria-label="Sort collections" value={sort} onChange={e=>setSort(e.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Title A–Z</option></select></label></div><div className="categories">{categories.map(c=><button key={c} className={category===c?'selected':''} onClick={()=>setCategory(c)}>{c}</button>)}{items.map(x=>x.category).filter((c,i,a):c is string=>!!c&&!categories.includes(c)&&a.indexOf(c)===i).map(c=><button key={c} className={category===c?'selected':''} onClick={()=>setCategory(c)}>{c}</button>)}</div>
- {loading?<div className="empty" role="status"><LoaderCircle className="spin"/><h3>Finding your next inspiration…</h3></div>:error?<div className="empty" role="alert"><AlertCircle/><h3>Let’s get connected.</h3><p>{error}</p><p className="fine">Check that PostgreSQL and the Spring Boot backend are running on port 8080.</p><button className="button outline" onClick={refresh}>Try again <ArrowRight size={16}/></button></div>:filtered.length?<div className="grid">{filtered.map((x,i)=><a className="loadout-card" key={x.id} href={'#loadout/'+x.id}><div className={'card-art color-'+(i%4)}><Layers size={64} strokeWidth={1}/><span>{x.category||'A collection of possibilities'}</span><div className="card-arrow"><ArrowUpRight size={20}/></div></div><div className="card-info"><span className="tiny-tag">{x.category||'UNCATEGORIZED'}</span><h3>{x.title}</h3><p>{x.description||'A collection waiting to be explored.'}</p><div className="card-meta"><span className="avatar">{x.ownerUsername.slice(0,1).toUpperCase()}</span><span>{x.ownerUsername}</span><time>{new Date(x.createdAt).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</time></div></div></a>)}</div>:<div className="empty"><Compass size={32}/><h3>{items.length?'Nothing here just yet.':'Good things start with one idea.'}</h3><p>{items.length?'Try another search or category to find your collection.':'Be the first to share a collection built around what you love.'}</p><button className="button outline" onClick={()=>{if(items.length){setQuery('');setCategory('All collections');}else create();}}>{items.length?'Clear filters':'Create a loadout'} <ArrowRight size={16}/></button></div>}</section><section className="bottom-banner"><div><span className="eyebrow">FROM INSPIRATION TO YOUR OWN COLLECTION</span><h2>Got a setup worth sharing?</h2></div><button className="button dark" onClick={create}>Make it a loadout <Plus size={18}/></button></section></>:view.page==='create'?<section className="editor page"><a className="back" href="#"><ArrowLeft size={16}/> Back to discover</a><div className="eyebrow">MAKE ROOM FOR YOUR IDEAS</div><h1>Create a loadout<span>.</span></h1><p className="intro">Give your collection a name and a little context. Share what makes it yours.</p><form onSubmit={save} className="editor-form"><label>Collection title <span className="required">*</span><input name="title" required maxLength={120} placeholder="e.g. My beginner baking setup"/><small>A good name makes your collection easy to discover.</small></label><label>Category<select name="category" defaultValue=""><option value="">Choose a category (optional)</option>{categories.slice(1).map(c=><option key={c}>{c}</option>)}</select></label><label>Description<textarea name="description" maxLength={5000} rows={6} placeholder="What’s this collection for? Who would love it?"/></label><div className="info"><Layers size={20}/><p>Create the loadout first, then add product names, links, and notes on its page.</p></div>{saveError&&<p className="error" role="alert">{saveError}</p>}<div className="form-footer"><a href="#" className="text-button">Cancel</a><button className="button dark" disabled={busy}>{busy?<LoaderCircle size={18} className="spin"/>:<Plus size={18}/>} {busy?'Creating…':'Create loadout'}</button></div><small>Created collections are visible to everyone. Drafts aren’t supported yet.</small></form></section>:<section className="page detail"><a className="back" href="#"><ArrowLeft size={16}/> Back to discover</a>{detailLoading?<div className="empty" role="status"><LoaderCircle className="spin"/> Loading collection…</div>:detailError?<div className="empty" role="alert"><AlertCircle/><h3>We couldn’t open this collection.</h3><p>{detailError}</p><a className="button outline" href="#">Back to discover</a></div>:detail&&<><div className="eyebrow">{detail.category||'COMMUNITY COLLECTION'}</div><h1>{detail.title}</h1><div className="detail-author"><span className="avatar">{detail.ownerUsername.slice(0,1).toUpperCase()}</span><div>Collected by <strong>{detail.ownerUsername}</strong><small>Created {new Date(detail.createdAt).toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'})}</small></div></div><div className="detail-body"><div><h2>About this loadout</h2><p className="description">{detail.description||'The creator hasn’t added a description yet.'}</p></div><aside><Layers size={26}/><h3>Built by the community.</h3><p>Product links and notes are entered by the creator. Open a link to view the item on its original site.</p></aside></div><Products loadoutId={detail.id} canEdit={user?.id===detail.ownerId}/></>}</section>}</main>
- <footer><a className="brand" href="#"><Layers size={18}/>loadouts.</a><span>A place for everything you’re into.</span><span className="footer-right">Made for the curious. © {new Date().getFullYear()}</span></footer>
- {auth&&<div className="modal-backdrop" onClick={e=>{if(e.target===e.currentTarget&&!busy)setAuth(null);}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="auth-title"><button className="modal-close icon-button" aria-label="Close sign in" onClick={()=>setAuth(null)} disabled={busy}><X size={20}/></button><span className="brand-icon"><Layers size={23}/></span><div className="eyebrow">YOUR NEXT IDEA STARTS HERE</div><h2 id="auth-title">{auth==='login'?'Welcome back.':'Make yourself at home.'}</h2><p>{auth==='login'?'Sign in to create a collection of your own.':'Join the community and share what you’re into.'}</p><form onSubmit={authenticate}>{auth==='register'&&<label>Username<input name="username" autoComplete="username" required maxLength={255}/></label>}<label>Email<input autoFocus name="email" type="email" autoComplete="email" required maxLength={255}/></label><label>Password<input name="password" type="password" required minLength={auth==='register'?8:undefined} maxLength={72} autoComplete={auth==='login'?'current-password':'new-password'}/>{auth==='register'&&<small>At least 8 characters.</small>}</label>{authError&&<p className="error" role="alert">{authError}</p>}<button className="button dark full" disabled={busy}>{busy?<LoaderCircle className="spin" size={18}/>:<ArrowRight size={18}/>} {busy?'Please wait…':auth==='login'?'Sign in':'Create account'}</button></form><p className="auth-switch">{auth==='login'?'New around here?':'Already have an account?'} <button className="text-button" onClick={()=>{setAuth(auth==='login'?'register':'login');setAuthError('');}}>{auth==='login'?'Create an account':'Sign in'}</button></p><small className="fine">After refreshing, sign in again to create a loadout. This demo has no session-status endpoint yet.</small></section></div>}</>;
+  const [view,setView]=useState(currentView);
+  const [user,setUser]=useState<User|null>(null);
+  const [checking,setChecking]=useState(true);
+  const [auth,setAuth]=useState<'login'|'register'|null>(null);
+  const [afterAuth,setAfterAuth]=useState('');
+  const [notice,setNotice]=useState('');
+  const [revision,setRevision]=useState(0);
+  const [loggingOut,setLoggingOut]=useState(false);
+  const changed=()=>setRevision(n=>n+1);
+  useEffect(()=>{
+    const hash=()=>{setView(currentView());window.scrollTo(0,0);};
+    const controller=new AbortController();
+    window.addEventListener('hashchange',hash);
+    api<User>('/auth/me','GET',undefined,controller.signal).then(u=>{if(!controller.signal.aborted)setUser(u);}).catch(e=>{
+      if(!controller.signal.aborted&&(!(e instanceof ApiError)||e.status!==401))setNotice(message(e));
+    }).finally(()=>{if(!controller.signal.aborted)setChecking(false);});
+    return ()=>{window.removeEventListener('hashchange',hash);controller.abort();};
+  },[]);
+  function request(next=''){
+    setAfterAuth(next);setAuth('login');
+  }
+  const create=()=>user?location.hash='create':request('create');
+  async function logout(){
+    setLoggingOut(true);
+    try{await api('/auth/logout','POST');setUser(null);changed();location.hash='';}
+    catch(e){setNotice(message(e));}finally{setLoggingOut(false);}
+  }
+  const protectedView=['mine','bookmarks','create','edit'].includes(view.page);
+  let content:React.ReactNode;
+  if(checking&&protectedView)content=<p className="page" role="status">Checking your session…</p>;
+  else if(protectedView&&!user) content=<section className="page"><h1>Sign in to continue</h1><button className="button dark" onClick={()=>request()}>Sign in</button></section>;
+  else if(view.page==='create') content=<Editor key="new" changed={changed}/>;
+  else if(view.page==='edit'&&user) content=<EditPage key={view.id} id={view.id} user={user} changed={changed}/>;
+  else if(view.page==='mine'||view.page==='bookmarks') content=<Listing key={view.page} page={view.page} revision={revision}/>;
+  else if(view.page==='loadout'&&view.id) content=<Details key={view.id} id={view.id} user={user} revision={revision} changed={changed} signIn={()=>request()}/>;
+  else if(view.page==='profile'&&view.id) content=<ProfilePage key={view.id} id={view.id} user={user} revision={revision} changed={changed}/>;
+  else content=<Discover revision={revision} create={create}/>;
+  return <><header className="header"><a className="brand" href="#" aria-label="Loadouts home"><span className="brand-icon"><Layers size={21}/></span>loadouts<span className="brand-dot">.</span></a>
+    <nav aria-label="Main navigation"><a href="#">Discover</a>
+      {user?<><a href="#mine">My loadouts</a><a href="#bookmarks">Bookmarks</a><a href={'#profile/'+user.id} className="username" aria-label="My profile">@{user.username}</a>
+        <button type="button" className="icon-button" disabled={loggingOut} aria-label="Sign out" onClick={()=>void logout()}><LogOut size={19}/></button></>
+        :<button type="button" className="text-button" disabled={checking} onClick={()=>request()}>Sign in</button>}
+      <button type="button" className="button dark small" disabled={checking} onClick={create}><Plus size={16}/> Create loadout</button></nav></header>
+    {notice&&<div className="notice" role="status">{notice}<button className="icon-button" onClick={()=>setNotice('')} aria-label="Dismiss"><X size={16}/></button></div>}
+    <main>{content}</main><footer><a className="brand" href="#">loadouts.</a><span>Collections for the things you love.</span></footer>
+    {auth&&<AuthDialog initial={auth} close={()=>setAuth(null)} done={u=>{setUser(u);setAuth(null);if(afterAuth)location.hash=afterAuth;changed();}}/>}
+  </>;
 }
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
+
