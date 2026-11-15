@@ -11,6 +11,11 @@ public class Loadout {
   @Column(length=80) private String category;
   @ManyToOne(fetch=FetchType.LAZY,optional=false) @JoinColumn(name="owner_id",nullable=false) private User owner;
   @Column(nullable=false) private Instant createdAt=Instant.now();
+  private Boolean draft;
+  public boolean isDraft(){return Boolean.TRUE.equals(draft);}
+  public void update(String title,String description,String category,boolean draft){
+    this.title=title;this.description=description;this.category=category;this.draft=draft;
+  }
   protected Loadout() {}
   public Loadout(String title,String description,String category,User owner){this.title=title;this.description=description;this.category=category;this.owner=owner;}
   public UUID getId(){return id;} public String getTitle(){return title;} public String getDescription(){return description;} public String getCategory(){return category;} public User getOwner(){return owner;} public Instant getCreatedAt(){return createdAt;}
